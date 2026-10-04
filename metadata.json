@@ -1,0 +1,6 @@
+{
+  "name": "Meu Investimento",
+  "description": "Simulador de juros compostos, metas financeiras e controle de aportes pessoais.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
