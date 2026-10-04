@@ -5,9 +5,10 @@ import {
   formatThousandsInput,
   parseCurrencyNumber,
 } from './utils/formatters';
+import { DepositStep, LumpSumDeposit, PeriodUnit } from './types/investment';
 import CompoundChart from './components/CompoundChart';
 
-const STORAGE_KEY = 'meu_investimento_params_v3';
+const STORAGE_KEY = 'meu_investimento_params_v4';
 
 function sanitizeRateInput(val: string): string {
   // Remove sinais negativos e caracteres inválidos, preservando números, vírgula e ponto
@@ -108,6 +109,48 @@ export default function App() {
     return '100.000';
   });
 
+  // Opções Avançadas: recolhidas por padrão
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.isAdvancedOpen !== undefined) return Boolean(parsed.isAdvancedOpen);
+      }
+    } catch {
+      // Ignora erro
+    }
+    return false;
+  });
+
+  // Mudanças de aporte mensal
+  const [depositSteps, setDepositSteps] = useState<DepositStep[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.depositSteps)) return parsed.depositSteps;
+      }
+    } catch {
+      // Ignora erro
+    }
+    return [];
+  });
+
+  // Aportes únicos
+  const [lumpSums, setLumpSums] = useState<LumpSumDeposit[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed.lumpSums)) return parsed.lumpSums;
+      }
+    } catch {
+      // Ignora erro
+    }
+    return [];
+  });
+
   // Salva no localStorage quando os valores mudam
   useEffect(() => {
     try {
@@ -120,14 +163,105 @@ export default function App() {
           years: yearsStr,
           inflationRate: inflationRateStr,
           goal: goalStr,
+          isAdvancedOpen,
+          depositSteps,
+          lumpSums,
         })
       );
     } catch {
       // Ignora erro
     }
-  }, [initialValueStr, monthlyDepositStr, annualRateStr, yearsStr, inflationRateStr, goalStr]);
+  }, [
+    initialValueStr,
+    monthlyDepositStr,
+    annualRateStr,
+    yearsStr,
+    inflationRateStr,
+    goalStr,
+    isAdvancedOpen,
+    depositSteps,
+    lumpSums,
+  ]);
 
-  // Cálculos reativos protegidos contra NaN e negativos
+  // Manipuladores de Mudança de Aporte
+  const handleAddStep = () => {
+    setDepositSteps(prev => [
+      ...prev,
+      {
+        id: String(Date.now() + Math.random()),
+        startValue: '',
+        unit: 'year',
+        newDeposit: '',
+      },
+    ]);
+  };
+
+  const handleUpdateStep = (
+    id: string,
+    field: keyof Omit<DepositStep, 'id'>,
+    value: string
+  ) => {
+    setDepositSteps(prev =>
+      prev.map(step => {
+        if (step.id !== id) return step;
+        if (field === 'newDeposit') {
+          return { ...step, newDeposit: formatThousandsInput(value) };
+        }
+        if (field === 'startValue') {
+          return { ...step, startValue: sanitizeRateInput(value) };
+        }
+        if (field === 'unit') {
+          return { ...step, unit: value as PeriodUnit };
+        }
+        return step;
+      })
+    );
+  };
+
+  const handleRemoveStep = (id: string) => {
+    setDepositSteps(prev => prev.filter(step => step.id !== id));
+  };
+
+  // Manipuladores de Aporte Único
+  const handleAddLumpSum = () => {
+    setLumpSums(prev => [
+      ...prev,
+      {
+        id: String(Date.now() + Math.random()),
+        periodValue: '',
+        unit: 'year',
+        amount: '',
+      },
+    ]);
+  };
+
+  const handleUpdateLumpSum = (
+    id: string,
+    field: keyof Omit<LumpSumDeposit, 'id'>,
+    value: string
+  ) => {
+    setLumpSums(prev =>
+      prev.map(lump => {
+        if (lump.id !== id) return lump;
+        if (field === 'amount') {
+          return { ...lump, amount: formatThousandsInput(value) };
+        }
+        if (field === 'periodValue') {
+          return { ...lump, periodValue: sanitizeRateInput(value) };
+        }
+        if (field === 'unit') {
+          return { ...lump, unit: value as PeriodUnit };
+        }
+        return lump;
+      })
+    );
+  };
+
+  const handleRemoveLumpSum = (id: string) => {
+    setLumpSums(prev => prev.filter(lump => lump.id !== id));
+  };
+
+  // Cálculos reativos protegidos contra NaN e negativos com opções avançadas
   const result = useMemo(() => {
     const initialValue = parseCurrencyNumber(initialValueStr);
     const monthlyDeposit = parseCurrencyNumber(monthlyDepositStr);
@@ -139,8 +273,10 @@ export default function App() {
       monthlyDeposit,
       annualRate,
       years,
+      depositSteps,
+      lumpSums,
     });
-  }, [initialValueStr, monthlyDepositStr, annualRateStr, yearsStr]);
+  }, [initialValueStr, monthlyDepositStr, annualRateStr, yearsStr, depositSteps, lumpSums]);
 
   // Cálculo automático do Imposto de Renda (tabela regressiva da renda fixa sobre os juros)
   const { irRatePercentText, irValue, netValue } = useMemo(() => {
@@ -185,7 +321,7 @@ export default function App() {
     return netValue;
   }, [netValue, inflationRateStr, yearsStr]);
 
-  // Cálculo automático do aporte mensal necessário para atingir a meta
+  // Cálculo automático do aporte mensal necessário para atingir a meta considerando opções avançadas
   const goalResult = useMemo(() => {
     const goalAmount = parseCurrencyNumber(goalStr);
     const initialValue = parseCurrencyNumber(initialValueStr);
@@ -198,33 +334,83 @@ export default function App() {
       return { reached: true, text: 'Meta já atingida' };
     }
 
-    // Valor futuro acumulado exclusivamente a partir do valor inicial
-    const futureInitial = initialValue * (monthlyRate > 0 ? Math.pow(1 + monthlyRate, totalMonths) : 1);
+    if (totalMonths <= 0) {
+      return initialValue >= goalAmount
+        ? { reached: true, text: 'Meta já atingida' }
+        : { reached: false, text: formatCurrency(goalAmount - initialValue) };
+    }
 
-    if (futureInitial >= goalAmount) {
+    // Processa os passos de mudança de aporte válidos
+    const validSteps: { startMonth: number; newDeposit: number }[] = [];
+    depositSteps.forEach(s => {
+      const pVal = parseRateNumber(s.startValue);
+      const dVal = parseCurrencyNumber(s.newDeposit);
+      if (pVal > 0 && dVal > 0) {
+        const sm = s.unit === 'year' ? Math.round((pVal - 1) * 12 + 1) : Math.round(pVal);
+        if (sm >= 1 && sm <= totalMonths) {
+          validSteps.push({ startMonth: sm, newDeposit: dVal });
+        }
+      }
+    });
+
+    // Processa os aportes únicos válidos
+    const validLumpSums: { targetMonth: number; amount: number }[] = [];
+    lumpSums.forEach(l => {
+      const pVal = parseRateNumber(l.periodValue);
+      const aVal = parseCurrencyNumber(l.amount);
+      if (pVal > 0 && aVal > 0) {
+        const tm = l.unit === 'year' ? Math.round((pVal - 1) * 12 + 1) : Math.round(pVal);
+        if (tm >= 1 && tm <= totalMonths) {
+          validLumpSums.push({ targetMonth: tm, amount: aVal });
+        }
+      }
+    });
+
+    // Valor futuro composto até totalMonths a partir do valor inicial e dos aportes fixados
+    let fvFixed = initialValue * (monthlyRate > 0 ? Math.pow(1 + monthlyRate, totalMonths) : 1);
+    let baseDepositFactor = 0;
+
+    for (let m = 1; m <= totalMonths; m++) {
+      const compoundFactor = monthlyRate > 0 ? Math.pow(1 + monthlyRate, totalMonths - m + 1) : 1;
+
+      // Soma qualquer aporte único do mês m
+      const lumpsInMonth = validLumpSums.filter(l => l.targetMonth === m);
+      for (const lump of lumpsInMonth) {
+        fvFixed += lump.amount * compoundFactor;
+      }
+
+      // Verifica se o mês m é coberto por uma mudança de aporte
+      const activeSteps = validSteps.filter(s => s.startMonth <= m);
+      if (activeSteps.length > 0) {
+        activeSteps.sort((a, b) => a.startMonth - b.startMonth);
+        const overriddenDeposit = activeSteps[activeSteps.length - 1].newDeposit;
+        fvFixed += overriddenDeposit * compoundFactor;
+      } else {
+        // Mês sujeito ao aporte base a ser calculado
+        baseDepositFactor += compoundFactor;
+      }
+    }
+
+    if (fvFixed >= goalAmount) {
       return { reached: true, text: 'Meta já atingida' };
     }
 
-    const neededFromDeposits = goalAmount - futureInitial;
-
-    if (totalMonths <= 0) {
-      return { reached: false, text: formatCurrency(neededFromDeposits) };
+    if (baseDepositFactor <= 0) {
+      return { reached: false, text: 'Meta não atingida' };
     }
 
-    let pmt = 0;
-    if (monthlyRate === 0) {
-      pmt = neededFromDeposits / totalMonths;
-    } else {
-      // Aportes no início do mês: FV = PMT * ((1+i)^n - 1)/i * (1+i)
-      const factor = ((Math.pow(1 + monthlyRate, totalMonths) - 1) / monthlyRate) * (1 + monthlyRate);
-      pmt = factor > 0 ? neededFromDeposits / factor : 0;
+    const neededFromBaseDeposits = goalAmount - fvFixed;
+    const pmt = neededFromBaseDeposits / baseDepositFactor;
+
+    if (pmt <= 0) {
+      return { reached: true, text: 'Meta já atingida' };
     }
 
     return {
       reached: false,
       text: `${formatCurrency(pmt)}/mês`,
     };
-  }, [goalStr, initialValueStr, annualRateStr, yearsStr]);
+  }, [goalStr, initialValueStr, annualRateStr, yearsStr, depositSteps, lumpSums]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
@@ -256,7 +442,7 @@ export default function App() {
                 Valor inicial
               </label>
               <div className="relative min-w-0 w-full">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] sm:text-xs font-semibold text-slate-400 font-mono pointer-events-none">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 font-mono pointer-events-none">
                   R$
                 </span>
                 <input
@@ -265,8 +451,7 @@ export default function App() {
                   inputMode="decimal"
                   value={initialValueStr}
                   onChange={e => setInitialValueStr(formatThousandsInput(e.target.value))}
-                  placeholder="0,00"
-                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-xs sm:text-sm text-slate-900 font-mono tabular-nums transition-colors"
+                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
                 />
               </div>
             </div>
@@ -276,7 +461,7 @@ export default function App() {
                 Aporte mensal
               </label>
               <div className="relative min-w-0 w-full">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] sm:text-xs font-semibold text-slate-400 font-mono pointer-events-none">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 font-mono pointer-events-none">
                   R$
                 </span>
                 <input
@@ -285,8 +470,7 @@ export default function App() {
                   inputMode="decimal"
                   value={monthlyDepositStr}
                   onChange={e => setMonthlyDepositStr(formatThousandsInput(e.target.value))}
-                  placeholder="0,00"
-                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-xs sm:text-sm text-slate-900 font-mono tabular-nums transition-colors"
+                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
                 />
               </div>
             </div>
@@ -303,10 +487,9 @@ export default function App() {
                   inputMode="decimal"
                   value={annualRateStr}
                   onChange={e => setAnnualRateStr(sanitizeRateInput(e.target.value))}
-                  placeholder="0,0"
-                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-6 sm:pr-7 text-xs sm:text-sm text-slate-900 font-mono tabular-nums transition-colors"
+                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-6 sm:pr-7 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
                 />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] sm:text-xs font-semibold text-slate-400 pointer-events-none">
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none">
                   %
                 </span>
               </div>
@@ -323,8 +506,7 @@ export default function App() {
                   inputMode="numeric"
                   value={yearsStr}
                   onChange={e => setYearsStr(sanitizeRateInput(e.target.value))}
-                  placeholder="1"
-                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-10 sm:pr-12 text-xs sm:text-sm text-slate-900 font-mono tabular-nums transition-colors"
+                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-10 sm:pr-12 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
                 />
                 <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] sm:text-xs text-slate-400 font-mono pointer-events-none">
                   {parseRateNumber(yearsStr) === 1 ? 'ano' : 'anos'}
@@ -344,10 +526,9 @@ export default function App() {
                   inputMode="decimal"
                   value={inflationRateStr}
                   onChange={e => setInflationRateStr(sanitizeRateInput(e.target.value))}
-                  placeholder="4"
-                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-6 sm:pr-7 text-xs sm:text-sm text-slate-900 font-mono tabular-nums transition-colors"
+                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-6 sm:pr-7 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
                 />
-                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] sm:text-xs font-semibold text-slate-400 pointer-events-none">
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 pointer-events-none">
                   %
                 </span>
               </div>
@@ -358,7 +539,7 @@ export default function App() {
                 Meta (R$)
               </label>
               <div className="relative min-w-0 w-full">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[11px] sm:text-xs font-semibold text-slate-400 font-mono pointer-events-none">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 font-mono pointer-events-none">
                   R$
                 </span>
                 <input
@@ -367,12 +548,187 @@ export default function App() {
                   inputMode="decimal"
                   value={goalStr}
                   onChange={e => setGoalStr(formatThousandsInput(e.target.value))}
-                  placeholder="100.000"
-                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-xs sm:text-sm text-slate-900 font-mono tabular-nums transition-colors"
+                  className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
                 />
               </div>
             </div>
           </div>
+
+          {/* Botão para abrir/ocultar Opções Avançadas */}
+          <div className="pt-3 border-t border-slate-100 mt-3.5">
+            <button
+              type="button"
+              onClick={() => setIsAdvancedOpen(prev => !prev)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-800 transition-colors py-1 cursor-pointer select-none"
+            >
+              <span>Opções avançadas</span>
+              <span className="text-[11px]">{isAdvancedOpen ? '▴' : '▾'}</span>
+              {(depositSteps.length > 0 || lumpSums.length > 0) && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 ml-0.5" />
+              )}
+            </button>
+          </div>
+
+          {/* Seção de Opções Avançadas sem scroll horizontal */}
+          {isAdvancedOpen && (
+            <div className="mt-2.5 pt-2.5 border-t border-slate-100 p-2 space-y-3.5 overflow-x-hidden">
+              {/* Bloco: Mudar meu aporte mensal */}
+              <div className="space-y-2">
+                <div>
+                  <h3 className="text-xs font-semibold text-slate-800">
+                    Mudar meu aporte mensal
+                  </h3>
+                  <p className="text-[12px] text-slate-400 font-normal mt-0.5">
+                    Use se você vai aumentar ou diminuir o aporte depois de um tempo.
+                  </p>
+                </div>
+
+                {depositSteps.length > 0 && (
+                  <div>
+                    {depositSteps.map(step => (
+                      <div
+                        key={step.id}
+                        className="border-b border-slate-100 last:border-b-0 pb-2 pt-1.5 space-y-1"
+                      >
+                        <div className="flex items-center flex-wrap gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] text-slate-600 font-medium">
+                          <span className="whitespace-nowrap shrink-0">A partir do</span>
+                          <select
+                            value={step.unit}
+                            onChange={e => handleUpdateStep(step.id, 'unit', e.target.value as PeriodUnit)}
+                            className="w-[72px] min-w-[72px] h-[36px] bg-white border border-slate-200 rounded-lg px-1.5 text-[16px] text-slate-800 font-medium cursor-pointer focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 shrink-0"
+                            aria-label="Mês ou Ano"
+                          >
+                            <option value="year">Ano</option>
+                            <option value="month">Mês</option>
+                          </select>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={step.startValue}
+                            onChange={e => handleUpdateStep(step.id, 'startValue', e.target.value)}
+                            className="w-[56px] min-w-[56px] h-[36px] bg-white border border-slate-200 rounded-lg px-1 text-[16px] text-slate-900 font-mono text-center focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 shrink-0"
+                            aria-label="Número do período"
+                          />
+                          <span className="whitespace-nowrap shrink-0">, investir R$</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={step.newDeposit}
+                            onChange={e => handleUpdateStep(step.id, 'newDeposit', e.target.value)}
+                            className="flex-1 min-w-[65px] h-[36px] bg-white border border-slate-200 rounded-lg px-2 text-[16px] text-slate-900 font-mono focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                            aria-label="Novo valor do aporte mensal"
+                          />
+                          <span className="whitespace-nowrap shrink-0">por mês</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveStep(step.id)}
+                            className="w-6 h-[36px] flex items-center justify-center text-slate-400 hover:text-red-600 transition-colors font-bold text-xs cursor-pointer shrink-0"
+                            title="Remover mudança"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Frase de confirmação em 12px cinza claro */}
+                        {step.startValue && step.newDeposit && (
+                          <div className="text-[12px] text-slate-400 font-normal pl-0.5">
+                            Do {step.unit === 'year' ? `ano ${step.startValue}` : `mês ${step.startValue}`} em diante, o aporte será R$ {step.newDeposit} por mês
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleAddStep}
+                  className="h-[32px] text-[13px] inline-flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  <span>+</span>
+                  <span>Adicionar mudança</span>
+                </button>
+              </div>
+
+              {/* Bloco: Aporte extra (uma vez só) */}
+              <div className="space-y-2 pt-2.5 border-t border-slate-100">
+                <div>
+                  <h3 className="text-xs font-semibold text-slate-800">
+                    Aporte extra (uma vez só)
+                  </h3>
+                  <p className="text-[12px] text-slate-400 font-normal mt-0.5">
+                    Use se você vai investir um valor grande em um mês específico.
+                  </p>
+                </div>
+
+                {lumpSums.length > 0 && (
+                  <div>
+                    {lumpSums.map(lump => (
+                      <div
+                        key={lump.id}
+                        className="border-b border-slate-100 last:border-b-0 pb-2 pt-1.5 space-y-1"
+                      >
+                        <div className="flex items-center flex-wrap gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] text-slate-600 font-medium">
+                          <span className="whitespace-nowrap shrink-0">No</span>
+                          <select
+                            value={lump.unit}
+                            onChange={e => handleUpdateLumpSum(lump.id, 'unit', e.target.value as PeriodUnit)}
+                            className="w-[72px] min-w-[72px] h-[36px] bg-white border border-slate-200 rounded-lg px-1.5 text-[16px] text-slate-800 font-medium cursor-pointer focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 shrink-0"
+                            aria-label="Mês ou Ano"
+                          >
+                            <option value="year">Ano</option>
+                            <option value="month">Mês</option>
+                          </select>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={lump.periodValue}
+                            onChange={e => handleUpdateLumpSum(lump.id, 'periodValue', e.target.value)}
+                            className="w-[56px] min-w-[56px] h-[36px] bg-white border border-slate-200 rounded-lg px-1 text-[16px] text-slate-900 font-mono text-center focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 shrink-0"
+                            aria-label="Número do período"
+                          />
+                          <span className="whitespace-nowrap shrink-0">, investir R$</span>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={lump.amount}
+                            onChange={e => handleUpdateLumpSum(lump.id, 'amount', e.target.value)}
+                            className="flex-1 min-w-[65px] h-[36px] bg-white border border-slate-200 rounded-lg px-2 text-[16px] text-slate-900 font-mono focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
+                            aria-label="Valor do aporte extra"
+                          />
+                          <span className="whitespace-nowrap shrink-0">de uma vez</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveLumpSum(lump.id)}
+                            className="w-6 h-[36px] flex items-center justify-center text-slate-400 hover:text-red-600 transition-colors font-bold text-xs cursor-pointer shrink-0"
+                            title="Remover aporte extra"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* Frase de confirmação em 12px cinza claro */}
+                        {lump.periodValue && lump.amount && (
+                          <div className="text-[12px] text-slate-400 font-normal pl-0.5">
+                            No {lump.unit === 'year' ? `ano ${lump.periodValue}` : `mês ${lump.periodValue}`}, entram R$ {lump.amount} a mais
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleAddLumpSum}
+                  className="h-[32px] text-[13px] inline-flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 rounded-lg transition-colors cursor-pointer"
+                >
+                  <span>+</span>
+                  <span>Adicionar aporte extra</span>
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* Seção de Resultados - Sempre 2 colunas */}
