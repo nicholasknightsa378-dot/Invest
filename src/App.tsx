@@ -8,7 +8,7 @@ import {
 import { DepositStep, LumpSumDeposit, PeriodUnit } from './types/investment';
 import CompoundChart from './components/CompoundChart';
 
-const STORAGE_KEY = 'meu_investimento_params_v4';
+const STORAGE_KEY = 'meu_investimento_params_v5';
 
 function sanitizeRateInput(val: string): string {
   // Remove sinais negativos e caracteres inválidos, preservando números, vírgula e ponto
@@ -37,7 +37,7 @@ export default function App() {
     } catch {
       // Ignora erro
     }
-    return '1.000';
+    return '';
   });
 
   const [monthlyDepositStr, setMonthlyDepositStr] = useState<string>(() => {
@@ -52,7 +52,7 @@ export default function App() {
     } catch {
       // Ignora erro
     }
-    return '300';
+    return '';
   });
 
   const [annualRateStr, setAnnualRateStr] = useState<string>(() => {
@@ -65,7 +65,7 @@ export default function App() {
     } catch {
       // Ignora erro
     }
-    return '10';
+    return '';
   });
 
   const [yearsStr, setYearsStr] = useState<string>(() => {
@@ -78,7 +78,7 @@ export default function App() {
     } catch {
       // Ignora erro
     }
-    return '5';
+    return '';
   });
 
   const [inflationRateStr, setInflationRateStr] = useState<string>(() => {
@@ -91,7 +91,7 @@ export default function App() {
     } catch {
       // Ignora erro
     }
-    return '4';
+    return '';
   });
 
   const [goalStr, setGoalStr] = useState<string>(() => {
@@ -106,7 +106,7 @@ export default function App() {
     } catch {
       // Ignora erro
     }
-    return '100.000';
+    return '';
   });
 
   // Opções Avançadas: recolhidas por padrão
@@ -122,6 +122,9 @@ export default function App() {
     }
     return false;
   });
+
+  // Confirmação para limpar todos os dados
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
 
   // Mudanças de aporte mensal
   const [depositSteps, setDepositSteps] = useState<DepositStep[]>(() => {
@@ -261,6 +264,37 @@ export default function App() {
     setLumpSums(prev => prev.filter(lump => lump.id !== id));
   };
 
+  // Limpa os campos (exceto taxa e inflação), opções avançadas e recolhe a seção
+  const handleClearAllData = () => {
+    setInitialValueStr('');
+    setMonthlyDepositStr('');
+    // Mantém taxa ao ano e inflação ao ano
+    setYearsStr('');
+    setGoalStr('');
+    setDepositSteps([]);
+    setLumpSums([]);
+    setIsAdvancedOpen(false);
+    setShowClearConfirm(false);
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          initialValue: '',
+          monthlyDeposit: '',
+          annualRate: annualRateStr,
+          years: '',
+          inflationRate: inflationRateStr,
+          goal: '',
+          isAdvancedOpen: false,
+          depositSteps: [],
+          lumpSums: [],
+        })
+      );
+    } catch {
+      // Ignora erro
+    }
+  };
+
   // Cálculos reativos protegidos contra NaN e negativos com opções avançadas
   const result = useMemo(() => {
     const initialValue = parseCurrencyNumber(initialValueStr);
@@ -330,8 +364,8 @@ export default function App() {
     const totalMonths = Math.round(years * 12);
     const monthlyRate = annualRate > 0 ? Math.pow(1 + annualRate / 100, 1 / 12) - 1 : 0;
 
-    if (goalAmount <= 0) {
-      return { reached: true, text: 'Meta já atingida' };
+    if (!goalStr || goalAmount <= 0) {
+      return { reached: false, text: 'R$ 0,00' };
     }
 
     if (totalMonths <= 0) {
@@ -426,11 +460,64 @@ export default function App() {
 
       {/* Conteúdo principal - Página rola normalmente na vertical */}
       <main className="grow max-w-4xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
+        {/* Modal de Confirmação para Limpar Dados */}
+        {showClearConfirm && (
+          <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-5 max-w-xs w-full shadow-xl border border-slate-200 space-y-4">
+              <div className="space-y-1 text-center">
+                <h3 className="text-sm font-bold text-slate-900">
+                  Limpar os dados?
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Taxa e inflação serão mantidas.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowClearConfirm(false)}
+                  className="w-full py-2 px-3 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAllData}
+                  className="w-full py-2 px-3 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  Limpar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Card de Parâmetros - Sempre 2 colunas */}
         <section className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-6 shadow-xs">
-          <h2 className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3 sm:mb-4">
-            Parâmetros do Investimento
-          </h2>
+          <div className="flex items-center justify-between mb-3 sm:mb-4">
+            <h2 className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Parâmetros do Investimento
+            </h2>
+            <button
+              type="button"
+              onClick={() => setShowClearConfirm(true)}
+              title="Limpar todos os dados"
+              aria-label="Limpar todos os dados"
+              className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
 
           <div
             className="grid grid-cols-2 gap-2 sm:gap-3"
@@ -449,6 +536,10 @@ export default function App() {
                   id="initial-value"
                   type="text"
                   inputMode="decimal"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={initialValueStr}
                   onChange={e => setInitialValueStr(formatThousandsInput(e.target.value))}
                   className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
@@ -468,6 +559,10 @@ export default function App() {
                   id="monthly-deposit"
                   type="text"
                   inputMode="decimal"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={monthlyDepositStr}
                   onChange={e => setMonthlyDepositStr(formatThousandsInput(e.target.value))}
                   className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
@@ -485,6 +580,10 @@ export default function App() {
                   id="annual-rate"
                   type="text"
                   inputMode="decimal"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={annualRateStr}
                   onChange={e => setAnnualRateStr(sanitizeRateInput(e.target.value))}
                   className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-6 sm:pr-7 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
@@ -504,6 +603,10 @@ export default function App() {
                   id="years"
                   type="text"
                   inputMode="numeric"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={yearsStr}
                   onChange={e => setYearsStr(sanitizeRateInput(e.target.value))}
                   className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-10 sm:pr-12 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
@@ -524,6 +627,10 @@ export default function App() {
                   id="inflation-rate"
                   type="text"
                   inputMode="decimal"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={inflationRateStr}
                   onChange={e => setInflationRateStr(sanitizeRateInput(e.target.value))}
                   className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-2.5 pr-6 sm:pr-7 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
@@ -546,6 +653,10 @@ export default function App() {
                   id="goal"
                   type="text"
                   inputMode="decimal"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
                   value={goalStr}
                   onChange={e => setGoalStr(formatThousandsInput(e.target.value))}
                   className="w-full min-w-0 bg-slate-50 border border-slate-200 focus:bg-white focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-2 pl-7 sm:pl-8 pr-2 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
@@ -569,69 +680,113 @@ export default function App() {
             </button>
           </div>
 
-          {/* Seção de Opções Avançadas sem scroll horizontal */}
+          {/* Seção de Opções Avançadas mais intuitiva em mini blocos de 2 colunas */}
           {isAdvancedOpen && (
-            <div className="mt-2.5 pt-2.5 border-t border-slate-100 p-2 space-y-3.5 overflow-x-hidden">
+            <div className="mt-3 pt-3 border-t border-slate-100 space-y-4">
               {/* Bloco: Mudar meu aporte mensal */}
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 <div>
                   <h3 className="text-xs font-semibold text-slate-800">
                     Mudar meu aporte mensal
                   </h3>
                   <p className="text-[12px] text-slate-400 font-normal mt-0.5">
-                    Use se você vai aumentar ou diminuir o aporte depois de um tempo.
+                    Para aumentar ou diminuir o aporte depois de um tempo.
                   </p>
                 </div>
 
                 {depositSteps.length > 0 && (
-                  <div>
+                  <div className="space-y-2.5">
                     {depositSteps.map(step => (
                       <div
                         key={step.id}
-                        className="border-b border-slate-100 last:border-b-0 pb-2 pt-1.5 space-y-1"
+                        className="relative p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-2"
                       >
-                        <div className="flex items-center flex-wrap gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] text-slate-600 font-medium">
-                          <span className="whitespace-nowrap shrink-0">A partir do</span>
-                          <select
-                            value={step.unit}
-                            onChange={e => handleUpdateStep(step.id, 'unit', e.target.value as PeriodUnit)}
-                            className="w-[72px] min-w-[72px] h-[36px] bg-white border border-slate-200 rounded-lg px-1.5 text-[16px] text-slate-800 font-medium cursor-pointer focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 shrink-0"
-                            aria-label="Mês ou Ano"
-                          >
-                            <option value="year">Ano</option>
-                            <option value="month">Mês</option>
-                          </select>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={step.startValue}
-                            onChange={e => handleUpdateStep(step.id, 'startValue', e.target.value)}
-                            className="w-[56px] min-w-[56px] h-[36px] bg-white border border-slate-200 rounded-lg px-1 text-[16px] text-slate-900 font-mono text-center focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 shrink-0"
-                            aria-label="Número do período"
-                          />
-                          <span className="whitespace-nowrap shrink-0">, investir R$</span>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={step.newDeposit}
-                            onChange={e => handleUpdateStep(step.id, 'newDeposit', e.target.value)}
-                            className="flex-1 min-w-[65px] h-[36px] bg-white border border-slate-200 rounded-lg px-2 text-[16px] text-slate-900 font-mono focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
-                            aria-label="Novo valor do aporte mensal"
-                          />
-                          <span className="whitespace-nowrap shrink-0">por mês</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveStep(step.id)}
-                            className="w-6 h-[36px] flex items-center justify-center text-slate-400 hover:text-red-600 transition-colors font-bold text-xs cursor-pointer shrink-0"
-                            title="Remover mudança"
-                          >
-                            ✕
-                          </button>
+                        {/* Botão x no canto do bloco */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveStep(step.id)}
+                          className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors font-bold text-xs cursor-pointer z-10"
+                          title="Remover mudança"
+                        >
+                          ✕
+                        </button>
+
+                        {/* Grade de 2 colunas com rótulos em cima */}
+                        <div
+                          className="grid grid-cols-2 gap-2 sm:gap-3 pr-6"
+                          style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
+                        >
+                          {/* Coluna 1: Quando começa? */}
+                          <div className="space-y-1 min-w-0">
+                            <label className="block text-[11px] sm:text-xs font-medium text-slate-700 truncate">
+                              Quando começa?
+                            </label>
+                            <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                                value={step.startValue}
+                                onChange={e => handleUpdateStep(step.id, 'startValue', e.target.value)}
+                                className="w-12 sm:w-16 h-9 bg-white border border-slate-200 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg px-1.5 text-[16px] text-slate-900 font-mono text-center shrink-0 transition-colors"
+                              />
+                              <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100 h-9 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateStep(step.id, 'unit', 'month')}
+                                  className={`px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs rounded-md transition-colors cursor-pointer ${
+                                    step.unit === 'month'
+                                      ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  Mês
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateStep(step.id, 'unit', 'year')}
+                                  className={`px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs rounded-md transition-colors cursor-pointer ${
+                                    step.unit === 'year'
+                                      ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  Ano
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Coluna 2: Novo aporte por mês (R$) */}
+                          <div className="space-y-1 min-w-0">
+                            <label className="block text-[11px] sm:text-xs font-medium text-slate-700 truncate">
+                              Novo aporte por mês (R$)
+                            </label>
+                            <div className="relative min-w-0 w-full">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 font-mono pointer-events-none">
+                                R$
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                                value={step.newDeposit}
+                                onChange={e => handleUpdateStep(step.id, 'newDeposit', e.target.value)}
+                                className="w-full h-9 bg-white border border-slate-200 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-1.5 pl-7 pr-2 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
+                              />
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Frase de confirmação em 12px cinza claro */}
+                        {/* Frase de confirmação em cinza pequeno */}
                         {step.startValue && step.newDeposit && (
-                          <div className="text-[12px] text-slate-400 font-normal pl-0.5">
+                          <div className="text-[12px] text-slate-400 font-normal pl-0.5 pt-1 border-t border-slate-200/50">
                             Do {step.unit === 'year' ? `ano ${step.startValue}` : `mês ${step.startValue}`} em diante, o aporte será R$ {step.newDeposit} por mês
                           </div>
                         )}
@@ -643,7 +798,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleAddStep}
-                  className="h-[32px] text-[13px] inline-flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 rounded-lg transition-colors cursor-pointer"
+                  className="h-8 text-xs inline-flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 rounded-lg transition-colors cursor-pointer"
                 >
                   <span>+</span>
                   <span>Adicionar mudança</span>
@@ -651,65 +806,109 @@ export default function App() {
               </div>
 
               {/* Bloco: Aporte extra (uma vez só) */}
-              <div className="space-y-2 pt-2.5 border-t border-slate-100">
+              <div className="space-y-2.5 pt-3.5 border-t border-slate-100">
                 <div>
                   <h3 className="text-xs font-semibold text-slate-800">
                     Aporte extra (uma vez só)
                   </h3>
                   <p className="text-[12px] text-slate-400 font-normal mt-0.5">
-                    Use se você vai investir um valor grande em um mês específico.
+                    Para investir um valor grande em um mês específico.
                   </p>
                 </div>
 
                 {lumpSums.length > 0 && (
-                  <div>
+                  <div className="space-y-2.5">
                     {lumpSums.map(lump => (
                       <div
                         key={lump.id}
-                        className="border-b border-slate-100 last:border-b-0 pb-2 pt-1.5 space-y-1"
+                        className="relative p-2.5 sm:p-3 rounded-xl bg-slate-50/80 border border-slate-200/80 space-y-2"
                       >
-                        <div className="flex items-center flex-wrap gap-1 sm:gap-1.5 text-[11px] sm:text-[13px] text-slate-600 font-medium">
-                          <span className="whitespace-nowrap shrink-0">No</span>
-                          <select
-                            value={lump.unit}
-                            onChange={e => handleUpdateLumpSum(lump.id, 'unit', e.target.value as PeriodUnit)}
-                            className="w-[72px] min-w-[72px] h-[36px] bg-white border border-slate-200 rounded-lg px-1.5 text-[16px] text-slate-800 font-medium cursor-pointer focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 shrink-0"
-                            aria-label="Mês ou Ano"
-                          >
-                            <option value="year">Ano</option>
-                            <option value="month">Mês</option>
-                          </select>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={lump.periodValue}
-                            onChange={e => handleUpdateLumpSum(lump.id, 'periodValue', e.target.value)}
-                            className="w-[56px] min-w-[56px] h-[36px] bg-white border border-slate-200 rounded-lg px-1 text-[16px] text-slate-900 font-mono text-center focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 shrink-0"
-                            aria-label="Número do período"
-                          />
-                          <span className="whitespace-nowrap shrink-0">, investir R$</span>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={lump.amount}
-                            onChange={e => handleUpdateLumpSum(lump.id, 'amount', e.target.value)}
-                            className="flex-1 min-w-[65px] h-[36px] bg-white border border-slate-200 rounded-lg px-2 text-[16px] text-slate-900 font-mono focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600"
-                            aria-label="Valor do aporte extra"
-                          />
-                          <span className="whitespace-nowrap shrink-0">de uma vez</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveLumpSum(lump.id)}
-                            className="w-6 h-[36px] flex items-center justify-center text-slate-400 hover:text-red-600 transition-colors font-bold text-xs cursor-pointer shrink-0"
-                            title="Remover aporte extra"
-                          >
-                            ✕
-                          </button>
+                        {/* Botão x no canto do bloco */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveLumpSum(lump.id)}
+                          className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors font-bold text-xs cursor-pointer z-10"
+                          title="Remover aporte extra"
+                        >
+                          ✕
+                        </button>
+
+                        {/* Grade de 2 colunas com rótulos em cima */}
+                        <div
+                          className="grid grid-cols-2 gap-2 sm:gap-3 pr-6"
+                          style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}
+                        >
+                          {/* Coluna 1: Em que mês/ano? */}
+                          <div className="space-y-1 min-w-0">
+                            <label className="block text-[11px] sm:text-xs font-medium text-slate-700 truncate">
+                              Em que mês/ano?
+                            </label>
+                            <div className="flex items-center gap-1 sm:gap-1.5 w-full min-w-0">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                                value={lump.periodValue}
+                                onChange={e => handleUpdateLumpSum(lump.id, 'periodValue', e.target.value)}
+                                className="w-12 sm:w-16 h-9 bg-white border border-slate-200 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg px-1.5 text-[16px] text-slate-900 font-mono text-center shrink-0 transition-colors"
+                              />
+                              <div className="inline-flex rounded-lg border border-slate-200 p-0.5 bg-slate-100 h-9 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateLumpSum(lump.id, 'unit', 'month')}
+                                  className={`px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs rounded-md transition-colors cursor-pointer ${
+                                    lump.unit === 'month'
+                                      ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  Mês
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleUpdateLumpSum(lump.id, 'unit', 'year')}
+                                  className={`px-1.5 sm:px-2 py-1 text-[11px] sm:text-xs rounded-md transition-colors cursor-pointer ${
+                                    lump.unit === 'year'
+                                      ? 'bg-white text-slate-900 shadow-xs font-semibold'
+                                      : 'text-slate-500 hover:text-slate-800'
+                                  }`}
+                                >
+                                  Ano
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Coluna 2: Valor extra (R$) */}
+                          <div className="space-y-1 min-w-0">
+                            <label className="block text-[11px] sm:text-xs font-medium text-slate-700 truncate">
+                              Valor extra (R$)
+                            </label>
+                            <div className="relative min-w-0 w-full">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold text-slate-400 font-mono pointer-events-none">
+                                R$
+                              </span>
+                              <input
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                autoCorrect="off"
+                                autoCapitalize="off"
+                                spellCheck={false}
+                                value={lump.amount}
+                                onChange={e => handleUpdateLumpSum(lump.id, 'amount', e.target.value)}
+                                className="w-full h-9 bg-white border border-slate-200 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 rounded-lg py-1.5 pl-7 pr-2 text-[16px] text-slate-900 font-mono tabular-nums transition-colors"
+                              />
+                            </div>
+                          </div>
                         </div>
 
-                        {/* Frase de confirmação em 12px cinza claro */}
+                        {/* Frase de confirmação em cinza pequeno */}
                         {lump.periodValue && lump.amount && (
-                          <div className="text-[12px] text-slate-400 font-normal pl-0.5">
+                          <div className="text-[12px] text-slate-400 font-normal pl-0.5 pt-1 border-t border-slate-200/50">
                             No {lump.unit === 'year' ? `ano ${lump.periodValue}` : `mês ${lump.periodValue}`}, entram R$ {lump.amount} a mais
                           </div>
                         )}
@@ -721,7 +920,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={handleAddLumpSum}
-                  className="h-[32px] text-[13px] inline-flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 rounded-lg transition-colors cursor-pointer"
+                  className="h-8 text-xs inline-flex items-center gap-1 font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 rounded-lg transition-colors cursor-pointer"
                 >
                   <span>+</span>
                   <span>Adicionar aporte extra</span>
@@ -853,8 +1052,8 @@ export default function App() {
 
         {/* Card do Gráfico de Linha da Evolução (Linha inteira: grid-column: 1 / -1) */}
         <section
-          className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-6 shadow-xs space-y-3"
-          style={{ gridColumn: '1 / -1' }}
+          className="bg-white border border-slate-200/90 rounded-2xl p-3.5 sm:p-6 shadow-xs space-y-3 overflow-x-hidden max-w-full"
+          style={{ gridColumn: '1 / -1', boxSizing: 'border-box' }}
         >
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500">
             Evolução do Patrimônio

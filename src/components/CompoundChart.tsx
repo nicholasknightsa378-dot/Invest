@@ -1,4 +1,4 @@
-import { useState, useRef, useId } from 'react';
+import { useState, useRef, useId, useLayoutEffect } from 'react';
 import { MonthDataPoint } from '../types/investment';
 import { formatCurrency, formatCompactCurrency } from '../utils/formatters';
 
@@ -10,14 +10,8 @@ export default function CompoundChart({ data }: CompoundChartProps) {
   const gradientId = useId();
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  if (!data || data.length === 0) {
-    return (
-      <div className="h-64 flex items-center justify-center text-slate-400 text-xs">
-        Nenhum dado para exibir.
-      </div>
-    );
-  }
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number }>({ left: 8, top: 8 });
 
   // Dimensões do canvas SVG
   const width = 800;
@@ -31,11 +25,11 @@ export default function CompoundChart({ data }: CompoundChartProps) {
   const chartWidth = width - paddingLeft - paddingRight;
   const chartHeight = height - paddingTop - paddingBottom;
 
-  const maxAccumulated = data[data.length - 1]?.totalAccumulated || 1;
+  const maxAccumulated = data && data.length > 0 ? data[data.length - 1]?.totalAccumulated || 1 : 1;
   const maxY = Math.max(maxAccumulated * 1.06, 100);
 
   const getX = (index: number) => {
-    if (data.length <= 1) return paddingLeft;
+    if (!data || data.length <= 1) return paddingLeft;
     return paddingLeft + (index / (data.length - 1)) * chartWidth;
   };
 
@@ -43,6 +37,58 @@ export default function CompoundChart({ data }: CompoundChartProps) {
     const clamped = Math.max(0, value);
     return paddingTop + chartHeight - (clamped / maxY) * chartHeight;
   };
+
+  // Cálculo da posição do tooltip dentro da tela sem transbordar
+  useLayoutEffect(() => {
+    if (hoverIndex === null || !containerRef.current || !data || data.length === 0) return;
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const containerWidth = containerRect.width;
+    const containerHeight = containerRect.height;
+
+    // Mede a caixa real ou usa estimativa segura
+    const tooltipWidth = tooltipRef.current ? tooltipRef.current.offsetWidth : 210;
+    const tooltipHeight = tooltipRef.current ? tooltipRef.current.offsetHeight : 120;
+
+    const activePoint = data[hoverIndex];
+    if (!activePoint) return;
+
+    const activeX = getX(hoverIndex);
+    const activeYAccumulated = getY(activePoint.totalAccumulated);
+
+    const pointPixelX = (activeX / width) * containerWidth;
+    const pointPixelY = (activeYAccumulated / height) * containerHeight;
+
+    // Se o ponto tocado estiver na metade direita do gráfico, abra a caixa para a ESQUERDA do ponto.
+    // Se estiver na metade esquerda, abra para a direita.
+    let targetLeft: number;
+    if (pointPixelX > containerWidth / 2) {
+      targetLeft = pointPixelX - tooltipWidth - 12;
+    } else {
+      targetLeft = pointPixelX + 12;
+    }
+
+    // Se ainda assim passar do limite, limite (clamp) a posição entre 8px e (largura do container - largura da caixa - 8px).
+    const minLeft = 8;
+    const maxLeft = Math.max(8, containerWidth - tooltipWidth - 8);
+    const clampedLeft = Math.max(minLeft, Math.min(maxLeft, targetLeft));
+
+    // Limita na vertical para que fique visível dentro do container
+    const minTop = 8;
+    const maxTop = Math.max(8, containerHeight - tooltipHeight - 8);
+    const targetTop = pointPixelY - tooltipHeight / 2;
+    const clampedTop = Math.max(minTop, Math.min(maxTop, targetTop));
+
+    setTooltipPos({ left: clampedLeft, top: clampedTop });
+  }, [hoverIndex, data]);
+
+  if (!data || data.length === 0) {
+    return (
+      <div className="h-64 flex items-center justify-center text-slate-400 text-xs">
+        Nenhum dado para exibir.
+      </div>
+    );
+  }
 
   const pointsAccumulated = data
     .map((d, i) => `${getX(i).toFixed(1)},${getY(d.totalAccumulated).toFixed(1)}`)
@@ -67,25 +113,21 @@ export default function CompoundChart({ data }: CompoundChartProps) {
   const xIndices: number[] = [0];
 
   if (totalYears <= 5) {
-    // Para até 5 anos, marca ano a ano
     for (let m = 12; m <= totalMonths; m += 12) {
       xIndices.push(m);
     }
   } else if (totalYears <= 15) {
-    // Para até 15 anos, marca a cada 2 ou 3 anos
     const stepYears = totalYears > 10 ? 3 : 2;
     for (let y = stepYears; y <= totalYears; y += stepYears) {
       const m = Math.min(y * 12, totalMonths);
       if (!xIndices.includes(m)) xIndices.push(m);
     }
   } else {
-    // Para mais de 15 anos, marca a cada 5 anos
     for (let y = 5; y <= totalYears; y += 5) {
       const m = Math.min(y * 12, totalMonths);
       if (!xIndices.includes(m)) xIndices.push(m);
     }
   }
-  // Garante que o último mês está presente
   if (!xIndices.includes(totalMonths) && totalMonths > 0) {
     xIndices.push(totalMonths);
   }
@@ -120,11 +162,11 @@ export default function CompoundChart({ data }: CompoundChartProps) {
   const activeX = hoverIndex !== null ? getX(hoverIndex) : 0;
   const activeYAccumulated = activePoint ? getY(activePoint.totalAccumulated) : 0;
 
-  // Posição horizontal segura para o tooltip não cortar nas bordas
-  const tooltipLeftPercent = Math.max(14, Math.min(86, (activeX / width) * 100));
-
   return (
-    <div className="flex flex-col w-full space-y-3">
+    <div
+      className="flex flex-col w-full space-y-3 max-w-full overflow-x-hidden"
+      style={{ boxSizing: 'border-box' }}
+    >
       {/* Legenda simples e indicador de toque */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500 border-b border-slate-100 pb-2.5">
         <div className="flex items-center gap-4">
@@ -138,19 +180,24 @@ export default function CompoundChart({ data }: CompoundChartProps) {
           </div>
         </div>
 
-        <span className="text-[11px] text-slate-400 font-mono">
-          {activePoint
-            ? activePoint.month === 0
+        {activePoint && (
+          <span className="text-[11px] text-slate-400 font-mono">
+            {activePoint.month === 0
               ? 'Início (Mês 0)'
-              : `Ano ${activePoint.year} (Mês ${activePoint.month})`
-            : 'Toque ou passe o mouse no gráfico'}
-        </span>
+              : `Ano ${activePoint.year} (Mês ${activePoint.month})`}
+          </span>
+        )}
       </div>
 
-      {/* Container SVG responsivo - Totalmente visível sem corte */}
+      {/* Container SVG responsivo - Totalmente contido sem gerar scroll horizontal */}
       <div
         ref={containerRef}
-        className="relative w-full aspect-16/9 sm:aspect-21/9 select-none min-h-[220px]"
+        className="relative w-full aspect-16/9 sm:aspect-21/9 select-none min-h-[220px] max-w-full"
+        style={{
+          position: 'relative',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
+        }}
       >
         <svg
           viewBox={`0 0 ${width} ${height}`}
@@ -277,40 +324,52 @@ export default function CompoundChart({ data }: CompoundChartProps) {
           )}
         </svg>
 
-        {/* Tooltip com ano, mês e valores detalhados ao tocar ou passar mouse */}
+        {/* Tooltip com ano, mês e valores detalhados posicionado estritamente dentro da tela */}
         {hoverIndex !== null && activePoint && (
           <div
-            className="pointer-events-none absolute z-20 bg-slate-900 border border-slate-800 rounded-lg p-3 text-xs text-white shadow-xl font-mono tabular-nums whitespace-nowrap transition-all duration-75"
+            ref={tooltipRef}
+            className="pointer-events-none absolute z-30 bg-slate-900 border border-slate-800 rounded-xl p-2.5 sm:p-3 text-[12px] text-white shadow-xl font-mono tabular-nums break-words transition-all duration-75"
             style={{
-              left: `${tooltipLeftPercent}%`,
-              top: `${Math.max(4, Math.min(75, (activeYAccumulated / height) * 100 - 15))}%`,
-              transform: 'translate(-50%, -100%)',
+              position: 'absolute',
+              pointerEvents: 'none',
+              maxWidth: 'calc(100% - 16px)',
+              boxSizing: 'border-box',
+              left: `${tooltipPos.left}px`,
+              top: `${tooltipPos.top}px`,
             }}
           >
-            <div className="font-semibold text-slate-200 border-b border-slate-700/80 pb-1 mb-1.5 flex items-center justify-between gap-3 text-[11px]">
+            <div className="font-semibold text-slate-200 border-b border-slate-700/80 pb-1 mb-1.5 flex items-center justify-between gap-2 text-[12px] flex-wrap">
               <span>
                 {activePoint.month === 0
                   ? 'Ponto de Partida'
                   : `Ano ${activePoint.year} · Mês ${activePoint.month}`}
               </span>
             </div>
-            <div className="space-y-1 text-[11px]">
-              <div className="flex justify-between gap-4">
+            <div className="space-y-1 text-[12px]">
+              <div className="flex justify-between items-baseline gap-2.5 flex-wrap">
                 <span className="text-slate-400">Total acumulado:</span>
-                <span className="text-emerald-400 font-bold">{formatCurrency(activePoint.totalAccumulated)}</span>
+                <span className="text-emerald-400 font-bold whitespace-nowrap">
+                  {formatCurrency(activePoint.totalAccumulated)}
+                </span>
               </div>
-              <div className="flex justify-between gap-4">
+              <div className="flex justify-between items-baseline gap-2.5 flex-wrap">
                 <span className="text-slate-400">Total investido:</span>
-                <span className="text-slate-300">{formatCurrency(activePoint.totalInvested)}</span>
+                <span className="text-slate-300 whitespace-nowrap">
+                  {formatCurrency(activePoint.totalInvested)}
+                </span>
               </div>
-              <div className="flex justify-between gap-4">
+              <div className="flex justify-between items-baseline gap-2.5 flex-wrap">
                 <span className="text-slate-400">Juros totais:</span>
-                <span className="text-emerald-300">+{formatCurrency(activePoint.totalInterest)}</span>
+                <span className="text-emerald-300 whitespace-nowrap">
+                  +{formatCurrency(activePoint.totalInterest)}
+                </span>
               </div>
               {activePoint.interestThisMonth > 0 && (
-                <div className="flex justify-between gap-4 pt-1 border-t border-slate-800 text-[10px] text-slate-400">
+                <div className="flex justify-between items-baseline gap-2.5 pt-1 border-t border-slate-800 text-[11px] text-slate-400 flex-wrap">
                   <span>Rendimento do mês:</span>
-                  <span className="text-emerald-400 font-semibold">+{formatCurrency(activePoint.interestThisMonth)}</span>
+                  <span className="text-emerald-400 font-semibold whitespace-nowrap">
+                    +{formatCurrency(activePoint.interestThisMonth)}
+                  </span>
                 </div>
               )}
             </div>
