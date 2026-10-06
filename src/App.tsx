@@ -7,6 +7,7 @@ import {
 } from './utils/formatters';
 import { DepositStep, LumpSumDeposit, PeriodUnit } from './types/investment';
 import CompoundChart from './components/CompoundChart';
+import PortfolioTab from './components/PortfolioTab';
 
 const STORAGE_KEY = 'meu_investimento_params_v5';
 
@@ -108,6 +109,9 @@ export default function App() {
     }
     return '';
   });
+
+  // Aba ativa: 'simulador' ou 'carteira'
+  const [activeTab, setActiveTab] = useState<'simulador' | 'carteira'>('simulador');
 
   // Opções Avançadas: recolhidas por padrão
   const [isAdvancedOpen, setIsAdvancedOpen] = useState<boolean>(() => {
@@ -448,19 +452,51 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
-      {/* Barra superior minimalista */}
-      <header className="h-14 border-b border-slate-200 bg-white/90 backdrop-blur-xs px-4 sm:px-6 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-2 max-w-4xl w-full mx-auto">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs shadow-emerald-500/40" />
-          <h1 className="text-base font-semibold tracking-tight text-slate-900">
-            Meu Investimento
-          </h1>
+      {/* Barra superior com abas */}
+      <header className="border-b border-slate-200 bg-white/90 backdrop-blur-xs px-3 sm:px-6 shrink-0">
+        <div className="flex items-center justify-between max-w-4xl w-full mx-auto h-14">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs shadow-emerald-500/40" />
+            <h1 className="text-base font-semibold tracking-tight text-slate-900">
+              Meu Investimento
+            </h1>
+          </div>
+
+          {/* Abas no topo: Simulador e Carteira */}
+          <nav className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => setActiveTab('simulador')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer select-none ${
+                activeTab === 'simulador'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              Simulador
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('carteira')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors cursor-pointer select-none ${
+                activeTab === 'carteira'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              Carteira
+            </button>
+          </nav>
         </div>
       </header>
 
       {/* Conteúdo principal - Página rola normalmente na vertical */}
       <main className="grow max-w-4xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-8 space-y-4 sm:space-y-6">
-        {/* Modal de Confirmação para Limpar Dados */}
+        {activeTab === 'carteira' ? (
+          <PortfolioTab />
+        ) : (
+          <>
+            {/* Modal de Confirmação para Limpar Dados */}
         {showClearConfirm && (
           <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl p-5 max-w-xs w-full shadow-xl border border-slate-200 space-y-4">
@@ -1061,7 +1097,9 @@ export default function App() {
 
           <CompoundChart data={result.monthlyData} />
         </section>
-      </main>
+      </>
+    )}
+  </main>
     </div>
   );
 }
